@@ -24,7 +24,7 @@ module tt_um_example (
     input wire rst_n
 );
 
-    reg[7:0] pines, osr, x, wcnt;
+    reg[7:0] pins, osr, x, wcnt;
     reg [4:0] pc;
     reg waiting;
     reg[15:0] instr;
