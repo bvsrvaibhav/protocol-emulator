@@ -9,12 +9,12 @@ You can also include images in this folder and reference them in the markdown. E
 
 ## How it works
 
-Explain how your project works
+A small programmable core that reads and writes pines with cycle-accurate timing, so protocols like UART, SPI, and I2C can be run from firmware instead of fixed logic.
 
 ## How to test
 
-Explain how to use your project
+Load a program into the instruction memory and observe the output pins.
 
 ## External hardware
 
-List external hardware used in your project (e.g. PMOD, LED display, etc), if any
+None.
