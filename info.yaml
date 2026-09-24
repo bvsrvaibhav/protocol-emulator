@@ -43,9 +43,9 @@ pinout:
   uo[7]: "out7"
 
   # Bidirectional pins
-  uio[0]: "io0"
-  uio[1]: "io1"
-  uio[2]: "io2"
+  uio[0]: "load_sck"
+  uio[1]: "load_mosi"
+  uio[2]: "load_cs_n"
   uio[3]: "io3"
   uio[4]: "io4"
   uio[5]: "io5"
