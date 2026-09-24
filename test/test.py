@@ -1,18 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import cocotb
+from asm import assemble
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles
 
-BIT = 6  
-
-
-def ins(op, imm=0, flags=0):
-    return (op << 12) | (flags << 8) | imm
-
-
-NOP, SET, WAIT, JMP, PUTBIT, LOADX, DJNZ, LOADO = range(8)
-WPIN, GETBIT, JPIN, OUTISR, SETPIN = 8, 9, 10, 11, 12
+BIT = 6 
 
 
 async def reset(dut):
@@ -38,7 +31,7 @@ async def load_program(dut, words):
             await pins(0, bit, 0)
             await pins(1, bit, 0)
     await pins(0, 0, 0)
-    await pins(0, 0, 1) 
+    await pins(0, 0, 1)
 
 
 @cocotb.test()
@@ -70,16 +63,18 @@ async def test_loaded_uart_rx(dut):
     await reset(dut)
 
    
-    prog = [
-        ins(WPIN, 0, 0),        # 0: wait for in0 == 0 (start bit)
-        ins(WAIT, 6),           # 1: skip to the middle of bit 0
-        ins(LOADX, 7),          # 2
-        ins(GETBIT, 0),         # 3: sample in0
-        ins(WAIT, 3),           # 4
-        ins(DJNZ, 3),           # 5: 8 samples
-        ins(OUTISR),            # 6: byte on the output pins
-        ins(JMP, 0),            # 7
-    ]
+    prog = assemble("""
+    start:
+        WPIN 0, 0       ; wait for start bit on input pin 0
+        WAIT 6          ; skip to the middle of bit 0
+        LOADX 7
+    loop:
+        GETBIT 0        ; sample input pin 0
+        WAIT 3
+        DJNZ loop       ; 8 samples
+        OUTISR          ; received byte on the output pins
+        JMP start
+    """)
     await load_program(dut, prog)
 
     byte = 0xA7
@@ -93,3 +88,27 @@ async def test_loaded_uart_rx(dut):
 
     got = int(dut.uo_out.value)
     assert got == byte, f"received 0x{got:02x}, expected 0x{byte:02x}"
+
+
+@cocotb.test()
+async def test_loaded_pin_copy(dut):
+    """Copy input pin 1 to output pin 2 using JPIN and SETPIN."""
+    cocotb.start_soon(Clock(dut.clk, 10, unit="us").start())
+    await reset(dut)
+
+    prog = assemble("""
+    loop:
+        JPIN hi, 1, 1   ; input pin 1 high?
+        SETPIN 2, 0
+        JMP loop
+    hi:
+        SETPIN 2, 1
+        JMP loop
+    """)
+    await load_program(dut, prog)
+
+    for level in (1, 0, 1, 0):
+        dut.ui_in.value = 0b01 | (level << 1)
+        await ClockCycles(dut.clk, 20)
+        got = (int(dut.uo_out.value) >> 2) & 1
+        assert got == level, f"pin copy failed for level {level}"
