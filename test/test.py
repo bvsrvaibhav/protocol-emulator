@@ -10,8 +10,8 @@ BIT = 6
 
 async def reset(dut):
     dut.ena.value = 1
-    dut.ui_in.value = 1         
-    dut.uio_in.value = 0b100     
+    dut.ui_in.value = 1          
+    dut.uio_in.value = 0b100    
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 5)
     dut.rst_n.value = 1
@@ -31,7 +31,7 @@ async def load_program(dut, words):
             await pins(0, bit, 0)
             await pins(1, bit, 0)
     await pins(0, 0, 0)
-    await pins(0, 0, 1)  
+    await pins(0, 0, 1) 
 
 
 @cocotb.test()
@@ -195,3 +195,78 @@ async def test_loaded_i2c_write(dut):
     stop_idx = next(i for i in edges(sda_hist) if i > scl_rises[8] and
                      sda_hist[i] == 1 and scl_hist[i] == 1)
     assert stop_idx > scl_rises[8]
+
+
+def spi_xfer_asm(byte, mosi=1, sck=2, cs=3, miso=0):
+    """SPI mode 0 (CPOL=0, CPHA=0) master transfer of one byte, full duplex:
+    MOSI set up before SCK rises, MISO sampled on the rising edge, SCK falls
+    to prepare the next bit. No open-drain needed -- SPI is push-pull.
+    PUTBIT always shifts the LSB out first (osr[0], right shift), which is
+    what UART wants. SPI is conventionally MSB-first, so the byte is
+    bit-reversed here, at assemble time, before it's loaded into OSR."""
+    rev = int(f"{byte:08b}"[::-1], 2)
+    return f"""
+    SETPIN {cs}, 0
+    LOADO {rev}
+    LOADX 7
+    loop:
+        PUTBIT {mosi}, 0
+        WAIT 1
+        SETPIN {sck}, 1
+        GETBIT {miso}
+        WAIT 1
+        SETPIN {sck}, 0
+        WAIT 1
+        DJNZ loop
+    SETPIN {cs}, 1
+    OUTISR
+    done: JMP done
+    """
+
+
+@cocotb.test()
+async def test_loaded_spi_xfer(dut):
+    """Drive an SPI master transfer and check both directions: the MOSI/SCK/CS
+    waveform sends the right byte, and a byte driven on the MISO input pin
+    (as if from a slave) is correctly captured into the output pins."""
+    cocotb.start_soon(Clock(dut.clk, 10, unit="us").start())
+    await reset(dut)
+
+    tx_byte = 0x6C
+    rx_byte = 0x93  
+    prog = assemble(spi_xfer_asm(tx_byte))
+    await load_program(dut, prog)
+
+    mosi_bits, cs_hist, sck_hist = [], [], []
+    rx_bits = [(rx_byte >> i) & 1 for i in range(7, -1, -1)]
+    bit_i = [0]
+    prev_sck = [0]
+
+    for _ in range(300):
+        await ClockCycles(dut.clk, 1)
+        out = int(dut.uo_out.value)
+        sck = (out >> 2) & 1
+        cs_hist.append((out >> 3) & 1)
+        sck_hist.append(sck)
+        mosi_bits.append((out >> 1) & 1)
+        if prev_sck[0] == 1 and sck == 0 and bit_i[0] < 8:
+            dut.ui_in.value = rx_bits[bit_i[0]]
+            bit_i[0] += 1
+        prev_sck[0] = sck
+
+    def edges(sig):
+        return [i for i in range(1, len(sig)) if sig[i] != sig[i - 1]]
+
+    cs_lo = next(i for i in range(len(cs_hist)) if cs_hist[i] == 0)
+    cs_hi = next(i for i in edges(cs_hist) if cs_hist[i] == 1 and i > cs_lo)
+    sck_rises = [i for i in edges(sck_hist) if sck_hist[i] == 1 and cs_lo <= i < cs_hi]
+    assert len(sck_rises) == 8, f"expected 8 SCK pulses, got {len(sck_rises)}"
+
+    got_tx = 0
+    for k in range(8):
+        got_tx = (got_tx << 1) | mosi_bits[sck_rises[k]]
+    assert got_tx == tx_byte, f"MOSI captured 0x{got_tx:02x}, expected 0x{tx_byte:02x}"
+
+    await ClockCycles(dut.clk, 5)
+    got_rx = int(dut.uo_out.value)
+    assert got_rx == rx_byte, f"MISO captured 0x{got_rx:02x}, expected 0x{rx_byte:02x}"
