@@ -7,12 +7,14 @@ Prints one line per instruction: address, 16-bit hex word.
 import re
 import sys
 
+
 OPS = {
     "NOP": (0, "none"), "SET": (1, "imm"), "WAIT": (2, "imm"),
-    "JMP": (3, "label"), "PUTBIT": (4, "pin"), "LOADX": (5, "imm"),
+    "JMP": (3, "label"), "PUTBIT": (4, "pinmode"), "LOADX": (5, "imm"),
     "DJNZ": (6, "label"), "LOADO": (7, "imm"), "WPIN": (8, "pinlvl"),
     "GETBIT": (9, "pin"), "JPIN": (10, "jpin"), "OUTISR": (11, "none"),
-    "SETPIN": (12, "pinlvl"),
+    "SETPIN": (12, "pinlvl"), "DIRPIN": (13, "pinlvl"), "SETUIO": (14, "pinlvl"),
+    "GETUIO": (15, "pin"),
 }
 DEPTH = 32
 
@@ -33,7 +35,7 @@ def _num(tok, line_no, lo, hi, what):
 
 def assemble(text):
     """Return a list of 16-bit instruction words."""
-    lines = []   
+    lines = []   # (line_no, mnemonic, [operands], source)
     labels = {}
     for line_no, raw in enumerate(text.splitlines(), 1):
         src = raw.split(";")[0].strip()
@@ -66,7 +68,8 @@ def assemble(text):
     words = []
     for line_no, mnem, args, _ in lines:
         op, kind = OPS[mnem]
-        want = {"none": 0, "imm": 1, "label": 1, "pin": 1, "pinlvl": 2, "jpin": 3}[kind]
+        want = {"none": 0, "imm": 1, "label": 1, "pin": 1, "pinlvl": 2, "jpin": 3,
+                "pinmode": 2}[kind]
         if len(args) != want:
             raise AsmError(f"line {line_no}: {mnem} takes {want} operand(s), got {len(args)}")
         flags = imm = 0
@@ -78,6 +81,9 @@ def assemble(text):
             imm = _num(args[0], line_no, 0, 7, "pin")
         elif kind == "pinlvl":
             imm = _num(args[0], line_no, 0, 7, "pin") | (_num(args[1], line_no, 0, 1, "level") << 3)
+        elif kind == "pinmode":
+            imm = _num(args[0], line_no, 0, 7, "pin")
+            flags = _num(args[1], line_no, 0, 1, "mode")
         elif kind == "jpin":
             a = target(args[0], line_no)
             pin = _num(args[1], line_no, 0, 7, "pin")
