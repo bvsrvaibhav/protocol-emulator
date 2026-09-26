@@ -118,7 +118,11 @@ def i2c_write_byte_asm(byte, sda=3, scl=4):
     PUTBIT's open-drain mode drives the OSR bit onto an SDA pin natively
     (drive-low for 0, release-and-float for 1), so the 8 data bits run as
     a real loop instead of being unrolled -- this is the point of having
-    open-drain support built into the core rather than bit-banged in software."""
+    open-drain support built into the core rather than bit-banged in software.
+    PUTBIT always shifts the LSB out first (osr[0], right shift). I2C is
+    MSB-first, so the byte is bit-reversed here, at assemble time, before
+    it's loaded into OSR -- the same fix SPI needed."""
+    rev = int(f"{byte:08b}"[::-1], 2)
     return f"""
     DIRPIN {sda}, 1
     DIRPIN {scl}, 1
@@ -128,7 +132,7 @@ def i2c_write_byte_asm(byte, sda=3, scl=4):
     SETUIO {sda}, 0
     WAIT 2
     SETUIO {scl}, 0
-    LOADO {byte}
+    LOADO {rev}
     LOADX 7
     bitloop:
         PUTBIT {sda}, 1
@@ -152,7 +156,6 @@ def i2c_write_byte_asm(byte, sda=3, scl=4):
     DIRPIN {sda}, 0
     stophold: JMP stophold
     """
-
 
 @cocotb.test()
 async def test_loaded_i2c_write(dut):
