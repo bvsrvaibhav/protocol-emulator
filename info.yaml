@@ -22,35 +22,37 @@ project:
 # The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.
 # This section is for the datasheet/website. Use descriptive names (e.g., RX, TX, MOSI, SCL, SEG_A, etc.).
 pinout:
-  # Inputs
-  ui[0]: "in0"
-  ui[1]: "in1"
-  ui[2]: "in2"
-  ui[3]: "in3"
-  ui[4]: "in4"
-  ui[5]: "in5"
-  ui[6]: "in6"
-  ui[7]: "in7"
+  # Inputs (protocol input pins, general purpose -- program-defined use)
+  ui[0]: "pio_in0"
+  ui[1]: "pio_in1"
+  ui[2]: "pio_in2"
+  ui[3]: "pio_in3"
+  ui[4]: "pio_in4"
+  ui[5]: "pio_in5"
+  ui[6]: "pio_in6"
+  ui[7]: "pio_in7"
 
-  # Outputs
-  uo[0]: "out0"
-  uo[1]: "out1"
-  uo[2]: "out2"
-  uo[3]: "out3"
-  uo[4]: "out4"
-  uo[5]: "out5"
-  uo[6]: "out6"
-  uo[7]: "out7"
+  # Outputs (protocol output pins, push-pull, program-defined use)
+  uo[0]: "pio_out0"
+  uo[1]: "pio_out1"
+  uo[2]: "pio_out2"
+  uo[3]: "pio_out3"
+  uo[4]: "pio_out4"
+  uo[5]: "pio_out5"
+  uo[6]: "pio_out6"
+  uo[7]: "pio_out7"
 
-  # Bidirectional pins
+  # Bidirectional pins: uio[0:2] load a program while cs_n is low;
+  # uio[0:7] are open-drain capable general I/O once a program is running
+  # (used for I2C SDA/SCL in the demo program, e.g. sda=uio[3] scl=uio[4])
   uio[0]: "load_sck"
   uio[1]: "load_mosi"
   uio[2]: "load_cs_n"
-  uio[3]: "io3"
-  uio[4]: "io4"
-  uio[5]: "io5"
-  uio[6]: "io6"
-  uio[7]: "io7"
+  uio[3]: "pio_io3"
+  uio[4]: "pio_io4"
+  uio[5]: "pio_io5"
+  uio[6]: "pio_io6"
+  uio[7]: "pio_io7"
 
 # Do not change!
 yaml_version: 6
