@@ -5,6 +5,7 @@ invariants -- pc always in range, uio never driven while loading, and
 that whatever it does drive is consistent with its own instruction stream
 replayed in a Python reference model.
 """
+import os
 import random
 
 import cocotb
@@ -14,7 +15,13 @@ from cocotb.triggers import ClockCycles
 
 from test import load_program, reset
 
-N_RUNS = 40           
+# Gate-level runs (GATES=yes) simulate the synthesized netlist, which does
+# not reliably preserve internal register names like `pc` -- so the pc
+# invariant below only runs against the RTL, where `dut.user_project.pc`
+# is guaranteed to exist. The random stimulus itself still runs either way.
+GATE_LEVEL = os.environ.get("GATES") == "yes"
+
+N_RUNS = 40           # random programs per test invocation
 STEPS_PER_RUN = 120
 
 MNEMONICS_NO_OPERAND = ["NOP", "OUTISR"]
@@ -64,26 +71,22 @@ async def test_random_programs_never_break_invariants(dut):
         await load_program(dut, prog)
 
         for step in range(STEPS_PER_RUN):
-            # random async stimulus on the protocol-facing input pins
             dut.ui_in.value = rng.randint(0, 255)
             dut.uio_in.value = (int(dut.uio_in.value) & 0b100) | rng.randint(0, 0b011)
             await ClockCycles(dut.clk, 1)
 
             # Invariant 1: the program counter is always a defined value in
             # range 0..31 -- never X/Z, never out of the memory's address
-            # space. This is the invariant most likely to catch a real bug:
-            # a branch instruction computing a bad target, or a control
-            # signal left undefined out of reset.
-            pc_val = dut.pc.value
-            assert pc_val.is_resolvable, (
-                f"run {run} step {step}: pc is X/Z ({pc_val}), program was:\n{src}"
-            )
-            assert 0 <= int(pc_val) <= 31, (
-                f"run {run} step {step}: pc={int(pc_val)} out of range, program was:\n{src}"
-            )
+            # space. RTL-only: see the GATE_LEVEL note above.
+            if not GATE_LEVEL:
+                pc_val = dut.user_project.pc.value
+                assert pc_val.is_resolvable, (
+                    f"run {run} step {step}: pc is X/Z ({pc_val}), program was:\n{src}"
+                )
+                assert 0 <= int(pc_val) <= 31, (
+                    f"run {run} step {step}: pc={int(pc_val)} out of range, program was:\n{src}"
+                )
 
-        # After a random program, a reset must always return the chip to
-        # its documented idle state: uio released, ready for the next load.
         await reset(dut)
         assert int(dut.uio_oe.value) == 0x00, (
             f"run {run}: uio_oe not clear after reset, program was:\n{src}"
