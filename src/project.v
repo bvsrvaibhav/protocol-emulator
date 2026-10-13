@@ -5,14 +5,14 @@
 
 `default_nettype none
 
-// Tiny programmable pin core
+// Tiny programmable pin core (v0.2).
 //
 // Loading a program: hold ui_in[0] (LOAD) high and clock 16-bit words in
-// MSB first on ui_in[1](DATA), one bit per clk. Words go to addresses 0, 1, 2 and so on 
+// MSB first on ui_in[1] (DATA), one bit per clk. Words go to addresses 0, 1, 2...
 // (address counter is cleared by reset). Load all 32 words. The core is paused
 // while LOAD is high and runs from pc=0 when LOAD goes low.
 //
-// Instruction: [15:12] op, [11] lvl, [10:8]pin, [7:0] imm(addr= imm[4:0])
+// Instruction: [15:12] op, [11] lvl, [10:8] pin, [7:0] imm (addr = imm[4:0])
 //    0 NOP
 //    1 SET   imm     : uo_out <= imm
 //    2 WAIT  n       : takes n+1 cycles
@@ -44,6 +44,7 @@ module tt_um_example (
   reg [15:0] sh;
   reg [3:0]  cnt;
   reg [4:0]  waddr;
+
   reg [7:0] pins, osr, x, wcnt;
   reg [4:0] pc;
   reg       waiting;
@@ -51,6 +52,8 @@ module tt_um_example (
 
   wire load  = ui_in[0];
   wire ldata = ui_in[1];
+
+
   wire [15:0] sh_next = {sh[14:0], ldata};
 
   always @(posedge clk) begin
@@ -87,6 +90,8 @@ module tt_um_example (
     if (!rst_n) begin
       pc <= 0; pins <= 8'h01; osr <= 0; x <= 0; wcnt <= 0; waiting <= 0;
     end else if (load) begin
+      pc      <= 0;      
+      waiting <= 0;
     end else if (waiting) begin
       if (wcnt == 0) begin waiting <= 0; pc <= pc + 5'd1; end
       else wcnt <= wcnt - 8'd1;
