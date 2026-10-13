@@ -6,9 +6,7 @@ SIM ?= icarus
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
 VERILOG_SOURCES += $(SRC_DIR)/project.v
-COCOTB_TOPLEVEL = tt_um_example
-COCOTB_TEST_MODULES = test,test_random
-include $(shell cocotb-config --makefiles)/Makefile.sim
+
 
 ifneq ($(GATES),yes)
 
