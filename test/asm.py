@@ -3,6 +3,7 @@
 
 NOP, SET, WAIT, JMP, PUTBIT, LOADX, DJNZ, LOADO = 0, 1, 2, 3, 4, 5, 6, 7
 WAITP, GETBIT, JPIN, SETB, OUTO = 8, 9, 10, 11, 12
+BUSOE, GETBITB, WAITPB = 13, 14, 15
 
 
 def ins(op, imm=0, lvl=0, pin=0):
@@ -19,7 +20,7 @@ async def load_program(dut, prog):
     """Serial-load an assembled program into the core via ui_in[0]=LOAD, ui_in[1]=DATA."""
     from cocotb.triggers import ClockCycles
 
-    idle = int(dut.ui_in.value) & ~0b11  
+    idle = int(dut.ui_in.value) & ~0b11 
     for w in assemble(prog):
         for i in range(15, -1, -1):
             dut.ui_in.value = idle | 1 | (((w >> i) & 1) << 1)
