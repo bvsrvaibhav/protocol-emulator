@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 
-
 import os
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -15,9 +14,10 @@ from asm import BUSOE, GETBITB, WAITPB
 from asm import ins, load_program
 from examples.i2c_master import I2C_WRITE_ADDR, SCL, SDA
 
-BIT = 6  
-IDLE = 0b100  
+BIT = 6  # cycles per UART bit
+IDLE = 0b100  # ui_in[2] (RX line) idle high, LOAD low
 
+# UART 8N1 transmitter: sends 0x55 forever on uo_out[0]
 TX_PROG = [
     ins(LOADO, 0x55),
     ins(SET, 0),
@@ -31,11 +31,12 @@ TX_PROG = [
     ins(JMP, 0),
 ]
 
+# UART 8N1 receiver: bytes on ui_in[2] appear on uo_out
 RX_PROG = [
-    ins(WAITP, lvl=0, pin=2),  
-    ins(WAIT, 6),              
+    ins(WAITP, lvl=0, pin=2),  # wait for start bit
+    ins(WAIT, 6),              # move to the middle of data bit 0
     ins(LOADX, 7),
-    ins(GETBIT, pin=2),
+    ins(GETBIT, pin=2),        # 3: sample
     ins(WAIT, 3),
     ins(DJNZ, 3),
     ins(OUTO),
@@ -76,7 +77,7 @@ async def test_uart_tx_0x55(dut):
 
     await ClockCycles(dut.clk, BIT // 2)
     bits = []
-    for _ in range(10):  
+    for _ in range(10):  # start + 8 data + stop
         bits.append(int(dut.uo_out.value) & 1)
         await ClockCycles(dut.clk, BIT)
 
@@ -86,7 +87,7 @@ async def test_uart_tx_0x55(dut):
     assert bits[9] == 1, "stop bit must be 1"
 
 
-async def i2c_bus_model(dut, ack_after_bits=8):
+async def i2c_bus_model(dut, ack_after_bits=9):
     """Drives dut.uio_in as a wired-AND bus: low if the DUT (or our fake slave)
     is pulling its line low via uio_oe, else released (pulled up) high. ACKs
     the address byte by pulling SDA low once it sees `ack_after_bits` SCL
@@ -103,12 +104,12 @@ async def i2c_bus_model(dut, ack_after_bits=8):
         sda_from_master = 0 if sda_driven else 1
 
         if not started and scl == 1 and sda_from_master == 0:
-            started = True  
+            started = True  # START condition: SDA falls while SCL is high
         if started and prev_scl == 0 and scl == 1:
             bits_seen += 1
         prev_scl = scl
 
-        ack_now = started and bits_seen == ack_after_bits and not sda_driven
+        ack_now = started and bits_seen >= ack_after_bits and not sda_driven
         sda = 0 if (sda_driven or ack_now) else 1
         dut.uio_in.value = (scl << SCL) | (sda << SDA)
 
