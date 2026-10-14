@@ -8,7 +8,7 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles
 
-from asm import NOP, SET, WAIT, JMP, PUTBIT, LOADX, DJNZ, LOADO
+from asm import LOADO, BUSOE, WAIT, LOADX, DJNZ, GETBITB, OUTO, JMP, ins
 from asm import WAITP, GETBIT, JPIN, SETB, OUTO
 from asm import BUSOE, GETBITB, WAITPB
 from asm import ins, load_program
