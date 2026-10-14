@@ -12,7 +12,9 @@ from asm import NOP, SET, WAIT, JMP, PUTBIT, LOADX, DJNZ, LOADO
 from asm import WAITP, GETBIT, JPIN, SETB, OUTO
 from asm import BUSOE, GETBITB, WAITPB
 from asm import ins, load_program
+from asm import reverse8
 from examples.i2c_master import I2C_WRITE_ADDR, SCL, SDA
+from examples.i2c_slave import I2C_SLAVE_ALWAYS_ACK
 
 BIT = 6  # cycles per UART bit
 IDLE = 0b100  # ui_in[2] (RX line) idle high, LOAD low
@@ -122,6 +124,50 @@ async def test_i2c_master(dut):
     await ClockCycles(dut.clk, 250)
     got = int(dut.uo_out.value)
     assert got & 0x80 == 0, f"expected ACK (bit7=0), got uo_out=0x{got:02x}"
+
+
+async def i2c_host_byte(dut, byte, settle=3):
+    """Drives dut.uio_in as an open-drain host: START, 8 bits MSB-first of
+    `byte`, then releases and reads back the slave's ACK. Combines its own
+    drive with whatever the DUT is independently pulling low (its ACK),
+    exactly like a real wired-AND bus."""
+
+    async def bus(scl_drive, sda_drive):
+        oe = int(dut.uio_oe.value)
+        scl = 0 if (scl_drive or (oe >> SCL) & 1) else 1
+        sda = 0 if (sda_drive or (oe >> SDA) & 1) else 1
+        dut.uio_in.value = (scl << SCL) | (sda << SDA)
+        await ClockCycles(dut.clk, settle)
+        return scl, sda
+
+    await bus(0, 0)                      # idle: both released
+    await bus(0, 1)                      # START: SDA low while SCL high
+    await bus(1, 1)                      # SCL low
+    for i in range(7, -1, -1):           # MSB first
+        bit = (byte >> i) & 1
+        drive_low = 0 if bit else 1
+        await bus(1, drive_low)          # set data while SCL low
+        await bus(0, drive_low)          # SCL high: sample edge
+        await bus(1, drive_low)          # SCL low
+    await bus(1, 0)                      # release SDA for the slave's ACK
+    _, sda = await bus(0, 0)             # SCL high: read ACK
+    await bus(1, 0)                      # SCL low
+    return sda == 0                      # True = ACKed
+
+
+@cocotb.test()
+async def test_i2c_slave(dut):
+    await init(dut)
+    await load_program(dut, I2C_SLAVE_ALWAYS_ACK)
+    await ClockCycles(dut.clk, 10)
+
+    sent = 0xA6  # 7-bit addr 0x53 << 1 | write(0)
+    acked = await i2c_host_byte(dut, sent)
+    assert acked, "slave did not ACK"
+
+    await ClockCycles(dut.clk, 5)
+    got = reverse8(int(dut.uo_out.value))
+    assert got == sent, f"sent 0x{sent:02x}, slave captured 0x{got:02x}"
 
 
 @cocotb.test()
