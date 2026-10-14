@@ -3,16 +3,9 @@
 byte MSB-first, reads the ACK, then STOP. Pins on the open-drain bidirectional
 bus: 0=SCL 1=SDA."""
 
-from asm import LOADO, BUSOE, WAIT, LOADX, DJNZ, GETBITB, OUTO, JMP, ins
+from asm import LOADO, BUSOE, WAIT, LOADX, DJNZ, GETBITB, OUTO, JMP, ins, reverse8
 
 SCL, SDA = 0, 1
-
-
-def reverse8(b):
-    r = 0
-    for i in range(8):
-        r |= ((b >> i) & 1) << (7 - i)
-    return r
 
 
 def i2c_write_addr(addr7, rw=0):
