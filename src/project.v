@@ -26,8 +26,15 @@
 //   10 JPIN  lvl,pin,a : if (input pin == lvl) pc <= a
 //   11 SETB  lvl,pin : uo_out[pin] <= lvl
 //   12 OUTO          : uo_out <= osr
+//   13 BUSOE pin,lvl : open-drain drive on uio[pin] (uio_oe[pin], uio_out[pin]=0)
+//                      lvl=0: bdir[pin] <= ~osr[0]; osr <= osr >> 1   (shift out a bit:
+//                             1 releases the bus, 0 pulls it low -- I2C data/ACK bit)
+//                      lvl=1: bdir[pin] <= imm[0]                    (static drive(1)/release(0),
+//                             for START/STOP conditions and clocking SCL)
+//   14 GETBITB pin   : osr <= {uio[pin], osr[7:1]}  (sample the open-drain bus, e.g. an ACK)
+//   15 WAITPB lvl,pin: stall until uio[pin] == lvl  (clock stretching, or wait for a released bus)
 // Inputs are read through a 2-flop synchronizer. All instructions take 1 cycle
-// except WAIT (n+1) and a stalled WAITP.
+// except WAIT (n+1) and a stalled WAITP/WAITPB.
 
 module tt_um_example (
     input  wire [7:0] ui_in,
@@ -49,10 +56,11 @@ module tt_um_example (
   reg [4:0] pc;
   reg       waiting;
   reg [7:0] in_q, in_s;
+  reg [7:0] bdir;           
+  reg [7:0] uio_q, uio_s;
 
   wire load  = ui_in[0];
   wire ldata = ui_in[1];
-
 
   wire [15:0] sh_next = {sh[14:0], ldata};
 
@@ -75,10 +83,11 @@ module tt_um_example (
   end
 
   always @(posedge clk) begin
-    in_q <= ui_in;
-    in_s <= in_q;
+    in_q  <= ui_in;
+    in_s  <= in_q;
+    uio_q <= uio_in;
+    uio_s <= uio_q;
   end
-
   wire [15:0] instr = mem[pc];
   wire [3:0]  op    = instr[15:12];
   wire        lvl   = instr[11];
@@ -88,9 +97,9 @@ module tt_um_example (
 
   always @(posedge clk) begin
     if (!rst_n) begin
-      pc <= 0; pins <= 8'h01; osr <= 0; x <= 0; wcnt <= 0; waiting <= 0;
+      pc <= 0; pins <= 8'h01; osr <= 0; x <= 0; wcnt <= 0; waiting <= 0; bdir <= 0;
     end else if (load) begin
-      pc      <= 0;      
+      pc      <= 0;   
       waiting <= 0;
     end else if (waiting) begin
       if (wcnt == 0) begin waiting <= 0; pc <= pc + 5'd1; end
@@ -110,15 +119,19 @@ module tt_um_example (
         4'd10: if (in_s[pidx] == lvl) pc <= addr;
         4'd11: pins[pidx] <= lvl;
         4'd12: pins <= osr;
+        4'd13: if (lvl) bdir[pidx] <= imm[0];
+               else begin bdir[pidx] <= ~osr[0]; osr <= {1'b0, osr[7:1]}; end
+        4'd14: osr <= {uio_s[pidx], osr[7:1]};
+        4'd15: if (uio_s[pidx] != lvl) pc <= pc;
         default: ;
       endcase
     end
   end
 
   assign uo_out  = pins;
-  assign uio_out = 0;
-  assign uio_oe  = 0;
+  assign uio_out = 8'h00;  
+  assign uio_oe  = bdir;
 
-  wire _unused = &{ena, uio_in, 1'b0};
+  wire _unused = &{ena, 1'b0};
 
 endmodule
