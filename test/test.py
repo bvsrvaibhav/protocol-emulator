@@ -6,10 +6,13 @@ from cocotb.triggers import ClockCycles
 
 from asm import NOP, SET, WAIT, JMP, PUTBIT, LOADX, DJNZ, LOADO
 from asm import WAITP, GETBIT, JPIN, SETB, OUTO
+from asm import BUSOE, GETBITB, WAITPB
 from asm import ins, load_program
+from examples.i2c_master import I2C_WRITE_ADDR, SCL, SDA
 
 BIT = 6  
 IDLE = 0b100  
+
 TX_PROG = [
     ins(LOADO, 0x55),
     ins(SET, 0),
@@ -23,12 +26,11 @@ TX_PROG = [
     ins(JMP, 0),
 ]
 
-
 RX_PROG = [
     ins(WAITP, lvl=0, pin=2),  
     ins(WAIT, 6),              
     ins(LOADX, 7),
-    ins(GETBIT, pin=2),       
+    ins(GETBIT, pin=2),
     ins(WAIT, 3),
     ins(DJNZ, 3),
     ins(OUTO),
@@ -69,7 +71,7 @@ async def test_uart_tx_0x55(dut):
 
     await ClockCycles(dut.clk, BIT // 2)
     bits = []
-    for _ in range(10): 
+    for _ in range(10):  
         bits.append(int(dut.uo_out.value) & 1)
         await ClockCycles(dut.clk, BIT)
 
@@ -77,6 +79,43 @@ async def test_uart_tx_0x55(dut):
     byte = sum(b << i for i, b in enumerate(bits[1:9]))
     assert byte == 0x55, f"got 0x{byte:02x}"
     assert bits[9] == 1, "stop bit must be 1"
+
+
+async def i2c_bus_model(dut, ack_after_bits=8):
+    """Drives dut.uio_in as a wired-AND bus: low if the DUT (or our fake slave)
+    is pulling its line low via uio_oe, else released (pulled up) high. ACKs
+    the address byte by pulling SDA low once it sees `ack_after_bits` SCL
+    rising edges after the START condition."""
+    bits_seen = 0
+    prev_scl = 1
+    started = False
+    while True:
+        await ClockCycles(dut.clk, 1)
+        oe = int(dut.uio_oe.value)
+        scl_driven = (oe >> SCL) & 1
+        sda_driven = (oe >> SDA) & 1
+        scl = 0 if scl_driven else 1
+        sda_from_master = 0 if sda_driven else 1
+
+        if not started and scl == 1 and sda_from_master == 0:
+            started = True  
+        if started and prev_scl == 0 and scl == 1:
+            bits_seen += 1
+        prev_scl = scl
+
+        ack_now = started and bits_seen == ack_after_bits and not sda_driven
+        sda = 0 if (sda_driven or ack_now) else 1
+        dut.uio_in.value = (scl << SCL) | (sda << SDA)
+
+
+@cocotb.test()
+async def test_i2c_master(dut):
+    await init(dut)
+    cocotb.start_soon(i2c_bus_model(dut))
+    await load_program(dut, I2C_WRITE_ADDR)
+    await ClockCycles(dut.clk, 250)
+    got = int(dut.uo_out.value)
+    assert got & 0x80 == 0, f"expected ACK (bit7=0), got uo_out=0x{got:02x}"
 
 
 @cocotb.test()
