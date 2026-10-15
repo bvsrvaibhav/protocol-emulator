@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles
+
 from asm import NOP, SET, WAIT, JMP, PUTBIT, LOADX, DJNZ, LOADO
 from asm import WAITP, GETBIT, JPIN, SETB, OUTO
 from asm import BUSOE, GETBITB, WAITPB
@@ -118,10 +119,11 @@ async def i2c_bus_model(dut, ack_after_bits=9):
 @cocotb.test()
 async def test_i2c_master(dut):
     await init(dut)
-    cocotb.start_soon(i2c_bus_model(dut))
+    bus_task = cocotb.start_soon(i2c_bus_model(dut))
     await load_program(dut, I2C_WRITE_ADDR)
     await ClockCycles(dut.clk, 250)
     got = int(dut.uo_out.value)
+    bus_task.kill()  # forked tasks outlive this test otherwise -- see test_i2c_slave
     assert got & 0x80 == 0, f"expected ACK (bit7=0), got uo_out=0x{got:02x}"
 
 
@@ -181,3 +183,4 @@ async def test_uart_rx(dut):
         await ClockCycles(dut.clk, 10)
         got = int(dut.uo_out.value)
         assert got == byte, f"sent 0x{byte:02x}, got 0x{got:02x}"
+        
