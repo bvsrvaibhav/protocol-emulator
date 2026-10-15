@@ -89,15 +89,19 @@ async def test_uart_tx_0x55(dut):
     assert bits[9] == 1, "stop bit must be 1"
 
 
-async def i2c_bus_model(dut, ack_after_bits=9):
+async def i2c_bus_model(dut, stop, ack_after_bits=9):
     """Drives dut.uio_in as a wired-AND bus: low if the DUT (or our fake slave)
     is pulling its line low via uio_oe, else released (pulled up) high. ACKs
     the address byte by pulling SDA low once it sees `ack_after_bits` SCL
-    rising edges after the START condition."""
+    rising edges after the START condition. `stop` is a single-item list used
+    as a mutable flag -- checked every loop, so the caller can end this task
+    deterministically instead of relying on Task.kill()/cancel() timing,
+    which left this driver fighting over uio_in in later tests even after
+    being killed."""
     bits_seen = 0
     prev_scl = 1
     started = False
-    while True:
+    while not stop[0]:
         await ClockCycles(dut.clk, 1)
         oe = int(dut.uio_oe.value)
         scl_driven = (oe >> SCL) & 1
@@ -119,11 +123,13 @@ async def i2c_bus_model(dut, ack_after_bits=9):
 @cocotb.test()
 async def test_i2c_master(dut):
     await init(dut)
-    bus_task = cocotb.start_soon(i2c_bus_model(dut))
+    stop = [False]
+    cocotb.start_soon(i2c_bus_model(dut, stop))
     await load_program(dut, I2C_WRITE_ADDR)
     await ClockCycles(dut.clk, 250)
     got = int(dut.uo_out.value)
-    bus_task.kill()  # forked tasks outlive this test otherwise -- see test_i2c_slave
+    stop[0] = True            # ends the background driver -- see i2c_bus_model
+    await ClockCycles(dut.clk, 2)  # let it actually observe the flag and exit
     assert got & 0x80 == 0, f"expected ACK (bit7=0), got uo_out=0x{got:02x}"
 
 
@@ -183,4 +189,3 @@ async def test_uart_rx(dut):
         await ClockCycles(dut.clk, 10)
         got = int(dut.uo_out.value)
         assert got == byte, f"sent 0x{byte:02x}, got 0x{got:02x}"
-        
