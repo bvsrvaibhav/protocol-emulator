@@ -165,8 +165,12 @@ async def i2c_host_byte(dut, byte, settle=3):
 @cocotb.test()
 async def test_i2c_slave(dut):
     await init(dut)
+    dut.uio_in.value = (1 << SCL) | (1 << SDA)  # idle: both lines released/high --
+    # set BEFORE loading, not after: it must hold through the whole load so the
+    # 2-cycle input synchronizer is settled well before the core starts executing
+    # (right after load, it would otherwise race the synchronizer by exactly the
+    # 2 cycles the core takes to reach its first WAITPB check)
     await load_program(dut, I2C_SLAVE_ALWAYS_ACK)
-    dut.uio_in.value = (1 << SCL) | (1 << SDA)  # idle: both lines released/high
     await ClockCycles(dut.clk, 10)
 
     sent = 0xA6  # 7-bit addr 0x53 << 1 | write(0)
