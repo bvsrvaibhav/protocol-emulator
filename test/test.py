@@ -7,7 +7,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles
-
 from asm import NOP, SET, WAIT, JMP, PUTBIT, LOADX, DJNZ, LOADO
 from asm import WAITP, GETBIT, JPIN, SETB, OUTO
 from asm import BUSOE, GETBITB, WAITPB
