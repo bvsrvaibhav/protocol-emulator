@@ -184,10 +184,10 @@ async def test_i2c_slave(dut):
             dut.uio_in.value = (scl << SCL) | (sda << SDA)
             for _ in range(settle):
                 await ClockCycles(dut.clk, 1)
-                pc = int(dut.pc.value)
-                bdir = int(dut.bdir.value)
-                uio_s = int(dut.uio_s.value)
-                waiting = int(dut.waiting.value)
+                pc = int(dut.user_project.pc.value)
+                bdir = int(dut.user_project.bdir.value)
+                uio_s = int(dut.user_project.uio_s.value)
+                waiting = int(dut.user_project.waiting.value)
                 dut._log.info(f"DBG {label:14s} scl={scl} sda={sda} pc={pc:2d} "
                                f"bdir={bdir:02b} uio_s={uio_s:02b} waiting={waiting}")
             return scl, sda
