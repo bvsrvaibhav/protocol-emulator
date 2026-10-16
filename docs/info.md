@@ -62,6 +62,18 @@ once LOAD goes low, regardless of what it was doing before loading started.
 - UART 8N1 transmitter and receiver (`test/test.py`: `TX_PROG`, `RX_PROG`)
 - SPI mode-0 master, full-duplex (`examples/spi_master.py`)
 - I2C master: START, 7-bit address + R/W, ACK, STOP (`examples/i2c_master.py`)
+- I2C slave/target: detects START, clocks in 8 bits, ACKs, exposes the byte
+  on `uo_out` (`examples/i2c_slave.py`). **Known limitation:** the ISA has no
+  compare/branch-on-equal instruction (all 16 opcodes are in use), so this
+  slave can't match its own address -- it ACKs every address. A real
+  multi-device bus needs that; a single-slave demo doesn't. Demonstrates the
+  controller role and the target role running against each other, which the
+  competition FAQ calls out as a plus.
+
+Byte order on I2C: the core always shifts LSB-first (`PUTBIT`/`BUSOE`), but
+I2C transmits MSB-first on the wire. `asm.reverse8()` is applied before
+loading a byte to send, and applied again to a byte received via `GETBITB`
+to get its natural value back -- same convention, both directions.
 
 ## How to test
 
@@ -74,6 +86,9 @@ hardware would, then checks the pin-level protocol output.
 - `test_i2c_master`: loads the I2C program, runs a Python coroutine
   (`i2c_bus_model`) that emulates a wired-AND bus and ACKs the address byte
   after the 9th SCL rising edge, checks the master reads ACK back correctly.
+- `test_i2c_slave`: loads the I2C slave program, runs a scripted Python host
+  (`i2c_host_byte`) that drives a real START/address/ACK sequence against it,
+  checks the slave ACKs and reports the correct byte back.
 - `test_uart_rx`: loads `RX_PROG`, drives 4 bytes in on the RX pin, checks
   each one appears correctly on `uo_out`.
 
@@ -94,6 +109,18 @@ context for review:
   checking `.is_resolvable` first.
 - The I2C testbench's own ACK-timing logic had an off-by-one (the 8th data
   bit's SCL edge and the dedicated ACK-sampling edge aren't the same edge).
+- The I2C slave was verified first with a from-scratch two-core loopback
+  (the master and slave programs run against each other on a shared
+  simulated wire, no scripted stand-in) before any cocotb test was written,
+  which caught a real RTL-adjacent bug: `WAITPB` for SCL-high succeeded
+  immediately on a stale pre-START level instead of waiting for a genuine
+  clock edge, fixed by syncing to SCL-low first.
+- The cocotb-side scripted host driving the slave sampled the DUT's
+  `uio_oe` once per multi-cycle "settle" window instead of every cycle, so
+  it missed the slave's ACK when it started mid-window. Diagnosed by
+  instrumenting internal signals (`dut.user_project.pc` etc. -- the DUT's
+  top-level cocotb handle is the `tb` wrapper, so the actual core is nested
+  one level in) directly in the test log rather than guessing further.
 
 ## External hardware
 
