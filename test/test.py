@@ -140,11 +140,16 @@ async def i2c_host_byte(dut, byte, settle=3):
     exactly like a real wired-AND bus."""
 
     async def bus(scl_drive, sda_drive):
-        oe = int(dut.uio_oe.value)
-        scl = 0 if (scl_drive or (oe >> SCL) & 1) else 1
-        sda = 0 if (sda_drive or (oe >> SDA) & 1) else 1
-        dut.uio_in.value = (scl << SCL) | (sda << SDA)
-        await ClockCycles(dut.clk, settle)
+        # Re-sample uio_oe every cycle, not once per call -- the DUT can start
+        # driving (e.g. its ACK) partway through a `settle` window, and a
+        # stale one-shot read misses that entirely.
+        scl = sda = 1
+        for _ in range(settle):
+            oe = int(dut.uio_oe.value)
+            scl = 0 if (scl_drive or (oe >> SCL) & 1) else 1
+            sda = 0 if (sda_drive or (oe >> SDA) & 1) else 1
+            dut.uio_in.value = (scl << SCL) | (sda << SDA)
+            await ClockCycles(dut.clk, 1)
         return scl, sda
 
     await bus(0, 0)                      # idle: both released
@@ -174,39 +179,7 @@ async def test_i2c_slave(dut):
     await ClockCycles(dut.clk, 10)
 
     sent = 0xA6  # 7-bit addr 0x53 << 1 | write(0)
-
-    # TEMPORARY instrumentation to diagnose a timing mismatch -- remove once fixed
-    async def i2c_host_byte_debug(dut, byte, settle=3):
-        async def bus(scl_drive, sda_drive, label=""):
-            oe = int(dut.uio_oe.value)
-            scl = 0 if (scl_drive or (oe >> SCL) & 1) else 1
-            sda = 0 if (sda_drive or (oe >> SDA) & 1) else 1
-            dut.uio_in.value = (scl << SCL) | (sda << SDA)
-            for _ in range(settle):
-                await ClockCycles(dut.clk, 1)
-                pc = int(dut.user_project.pc.value)
-                bdir = int(dut.user_project.bdir.value)
-                uio_s = int(dut.user_project.uio_s.value)
-                waiting = int(dut.user_project.waiting.value)
-                dut._log.info(f"DBG {label:14s} scl={scl} sda={sda} pc={pc:2d} "
-                               f"bdir={bdir:02b} uio_s={uio_s:02b} waiting={waiting}")
-            return scl, sda
-
-        await bus(0, 0, "idle")
-        await bus(0, 1, "START")
-        await bus(1, 1, "SCLlo")
-        for i in range(7, -1, -1):
-            bit = (byte >> i) & 1
-            dl = 0 if bit else 1
-            await bus(1, dl, f"bit{i}set")
-            await bus(0, dl, f"bit{i}SCLhi")
-            await bus(1, dl, f"bit{i}SCLlo")
-        await bus(1, 0, "relSDA")
-        _, sda = await bus(0, 0, "readACK")
-        await bus(1, 0, "SCLlo2")
-        return sda == 0
-
-    acked = await i2c_host_byte_debug(dut, sent)
+    acked = await i2c_host_byte(dut, sent)
     assert acked, "slave did not ACK"
 
     await ClockCycles(dut.clk, 5)
